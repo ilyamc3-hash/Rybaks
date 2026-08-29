@@ -1,5 +1,5 @@
 -- ============================================================
--- Схема базы данных для приложения "Клёв" (чат + маркетплейс)
+-- Схема базы данных для приложения "Клёв" (чат + барахолка)
 -- Выполнить в SQL Editor проекта Supabase.
 --
 -- Авторизация по SMS настраивается отдельно в дашборде:
@@ -41,26 +41,36 @@ create table if not exists messages (
 create index if not exists messages_region_id_created_at_idx
   on messages (region_id, created_at);
 
--- Товары каталога. seller_id опционален: seed-товары для разработки
--- (см. supabase/seed.sql) создаются без привязки к продавцу.
-create table if not exists products (
+-- Барахолка: объявления пользователей. Каждое объявление создаёт
+-- авторизованный пользователь и привязано к его текущему региону —
+-- список объявлений региона показывается на вкладке «Барахолка».
+-- price опционально (объявления вида «куплю» могут быть без цены;
+-- в приложении пустая цена показывается как «Цена договорная»).
+create table if not exists listings (
   id uuid primary key default gen_random_uuid(),
-  seller_id uuid references users (id) on delete set null,
-  region_id uuid references regions (id) on delete set null,
+  seller_id uuid not null references users (id) on delete cascade,
+  region_id uuid not null references regions (id) on delete cascade,
   title text not null,
   description text,
-  price numeric(10, 2) not null check (price >= 0),
-  image_url text,
+  price numeric(10, 2) check (price is null or price >= 0),
+  photo_url text,
+  status text not null default 'active'
+    check (status in ('active', 'sold', 'archived')),
   created_at timestamptz not null default now()
 );
 
-create index if not exists products_region_id_idx on products (region_id);
+-- Основной запрос вкладки: активные объявления региона, свежие сверху.
+create index if not exists listings_region_status_created_idx
+  on listings (region_id, status, created_at desc);
+
+-- «Мои объявления» в профиле — выборка по автору.
+create index if not exists listings_seller_id_idx on listings (seller_id);
 
 -- ============================================================
 -- Row Level Security: включена на всех таблицах.
 --
--- Чтение регионов/сообщений/товаров открыто всем, включая анонимных
--- клиентов — приложение разрешает просматривать регионы, чат и каталог
+-- Чтение регионов/сообщений/объявлений открыто всем, включая анонимных
+-- клиентов — приложение разрешает просматривать регионы, чат и барахолку
 -- без входа по SMS (в т.ч. через локальный dev-режим входа, который не
 -- создаёт настоящую сессию Supabase). Запись же требует настоящей
 -- авторизованной сессии — dev-режим ничего не пишет в реальные таблицы.
@@ -69,7 +79,7 @@ create index if not exists products_region_id_idx on products (region_id);
 alter table regions enable row level security;
 alter table users enable row level security;
 alter table messages enable row level security;
-alter table products enable row level security;
+alter table listings enable row level security;
 
 create policy "Регионы доступны всем" on regions
   for select using (true);
@@ -89,14 +99,14 @@ create policy "Сообщения чата видны всем" on messages
 create policy "Пользователь пишет сообщения от своего имени" on messages
   for insert with check (auth.uid() = author_id);
 
-create policy "Товары каталога видны всем" on products
+create policy "Объявления барахолки видны всем" on listings
   for select using (true);
 
-create policy "Пользователь управляет только своими товарами" on products
+create policy "Автор создаёт объявление от своего имени" on listings
   for insert with check (auth.uid() = seller_id);
 
-create policy "Пользователь редактирует только свои товары" on products
+create policy "Автор редактирует только свои объявления" on listings
   for update using (auth.uid() = seller_id);
 
-create policy "Пользователь удаляет только свои товары" on products
+create policy "Автор удаляет только свои объявления" on listings
   for delete using (auth.uid() = seller_id);

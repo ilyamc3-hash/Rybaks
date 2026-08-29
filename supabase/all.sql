@@ -2,7 +2,7 @@
 -- Сгенерирован из schema.sql + seed.sql + storage.sql.
 
 -- ============================================================
--- Схема базы данных для приложения "Клёв" (чат + маркетплейс)
+-- Схема базы данных для приложения "Клёв" (чат + барахолка)
 -- Выполнить в SQL Editor проекта Supabase.
 --
 -- Авторизация по SMS настраивается отдельно в дашборде:
@@ -44,26 +44,36 @@ create table if not exists messages (
 create index if not exists messages_region_id_created_at_idx
   on messages (region_id, created_at);
 
--- Товары каталога. seller_id опционален: seed-товары для разработки
--- (см. supabase/seed.sql) создаются без привязки к продавцу.
-create table if not exists products (
+-- Барахолка: объявления пользователей. Каждое объявление создаёт
+-- авторизованный пользователь и привязано к его текущему региону —
+-- список объявлений региона показывается на вкладке «Барахолка».
+-- price опционально (объявления вида «куплю» могут быть без цены;
+-- в приложении пустая цена показывается как «Цена договорная»).
+create table if not exists listings (
   id uuid primary key default gen_random_uuid(),
-  seller_id uuid references users (id) on delete set null,
-  region_id uuid references regions (id) on delete set null,
+  seller_id uuid not null references users (id) on delete cascade,
+  region_id uuid not null references regions (id) on delete cascade,
   title text not null,
   description text,
-  price numeric(10, 2) not null check (price >= 0),
-  image_url text,
+  price numeric(10, 2) check (price is null or price >= 0),
+  photo_url text,
+  status text not null default 'active'
+    check (status in ('active', 'sold', 'archived')),
   created_at timestamptz not null default now()
 );
 
-create index if not exists products_region_id_idx on products (region_id);
+-- Основной запрос вкладки: активные объявления региона, свежие сверху.
+create index if not exists listings_region_status_created_idx
+  on listings (region_id, status, created_at desc);
+
+-- «Мои объявления» в профиле — выборка по автору.
+create index if not exists listings_seller_id_idx on listings (seller_id);
 
 -- ============================================================
 -- Row Level Security: включена на всех таблицах.
 --
--- Чтение регионов/сообщений/товаров открыто всем, включая анонимных
--- клиентов — приложение разрешает просматривать регионы, чат и каталог
+-- Чтение регионов/сообщений/объявлений открыто всем, включая анонимных
+-- клиентов — приложение разрешает просматривать регионы, чат и барахолку
 -- без входа по SMS (в т.ч. через локальный dev-режим входа, который не
 -- создаёт настоящую сессию Supabase). Запись же требует настоящей
 -- авторизованной сессии — dev-режим ничего не пишет в реальные таблицы.
@@ -72,7 +82,7 @@ create index if not exists products_region_id_idx on products (region_id);
 alter table regions enable row level security;
 alter table users enable row level security;
 alter table messages enable row level security;
-alter table products enable row level security;
+alter table listings enable row level security;
 
 create policy "Регионы доступны всем" on regions
   for select using (true);
@@ -92,30 +102,28 @@ create policy "Сообщения чата видны всем" on messages
 create policy "Пользователь пишет сообщения от своего имени" on messages
   for insert with check (auth.uid() = author_id);
 
-create policy "Товары каталога видны всем" on products
+create policy "Объявления барахолки видны всем" on listings
   for select using (true);
 
-create policy "Пользователь управляет только своими товарами" on products
+create policy "Автор создаёт объявление от своего имени" on listings
   for insert with check (auth.uid() = seller_id);
 
-create policy "Пользователь редактирует только свои товары" on products
+create policy "Автор редактирует только свои объявления" on listings
   for update using (auth.uid() = seller_id);
 
-create policy "Пользователь удаляет только свои товары" on products
+create policy "Автор удаляет только свои объявления" on listings
   for delete using (auth.uid() = seller_id);
 
 
 -- ============================================================
--- Seed-скрипт для локальной разработки/тестирования.
+-- Seed-скрипт: справочник регионов.
 -- Выполнить в SQL Editor проекта Supabase ПОСЛЕ supabase/schema.sql.
 -- Безопасно выполнять повторно — вставки идут через "where not exists"
--- (дублей не будет), обновления фото товаров идут через update по title.
+-- (дублей не будет).
+--
+-- Объявления барахолки (таблица listings) не сидируются — их создают
+-- сами пользователи из приложения.
 -- ============================================================
-
--- На случай, если schema.sql уже выполнялся раньше в старой версии,
--- где seller_id был обязательным полем — снимаем ограничение, иначе
--- тестовые товары без владельца не вставятся.
-alter table products alter column seller_id drop not null;
 
 -- Регионы -------------------------------------------------------
 -- Полный список 85 субъектов РФ (22 республики, 9 краёв, 46 областей,
@@ -217,58 +225,6 @@ from (values
 ) as v(name, description)
 where not exists (select 1 from regions r where r.name = v.name);
 
--- Товары каталога -------------------------------------------------
--- Фото — свободные (Wikimedia Commons, CC/public domain), проверены
--- вручную на тематическое соответствие товару.
---
--- Обновляем image_url у уже существующих строк (на случай, если seed.sql
--- уже запускался раньше со старыми, нетематичными фото) — только вставки
--- через "where not exists" этого не сделают.
-update products set image_url =
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/A_spinning_reel_on_a_rod.jpg/500px-A_spinning_reel_on_a_rod.jpg'
-  where title = 'Спиннинг Shimano Catana';
-
-update products set image_url =
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Abu_reel.jpg/500px-Abu_reel.jpg'
-  where title = 'Катушка Daiwa Legalis';
-
-update products set image_url =
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Angeln_zubehoer_wobbler_01.jpg/500px-Angeln_zubehoer_wobbler_01.jpg'
-  where title = 'Набор воблеров (5 шт.)';
-
-update products set image_url =
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Fishfinder_display_showing_the_mark_at_Flash_Pinnacle_P7280213.jpg/500px-Fishfinder_display_showing_the_mark_at_Flash_Pinnacle_P7280213.jpg'
-  where title = 'Эхолот Lucky FF718';
-
-update products set image_url =
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Zan%C4%99ta_na_ryby_%28Murowana_Goslina%29%2C_groundbait.jpg/500px-Zan%C4%99ta_na_ryby_%28Murowana_Goslina%29%2C_groundbait.jpg'
-  where title = 'Прикормка Sensas 3000';
-
-insert into products (title, description, price, image_url)
-select 'Спиннинг Shimano Catana', 'Длина 2.1м, тест 5-21г', 3490,
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/A_spinning_reel_on_a_rod.jpg/500px-A_spinning_reel_on_a_rod.jpg'
-where not exists (select 1 from products where title = 'Спиннинг Shimano Catana');
-
-insert into products (title, description, price, image_url)
-select 'Катушка Daiwa Legalis', 'Безынерционная, 2500 размер', 5200,
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Abu_reel.jpg/500px-Abu_reel.jpg'
-where not exists (select 1 from products where title = 'Катушка Daiwa Legalis');
-
-insert into products (title, description, price, image_url)
-select 'Набор воблеров (5 шт.)', 'Для ловли щуки и окуня', 1750,
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Angeln_zubehoer_wobbler_01.jpg/500px-Angeln_zubehoer_wobbler_01.jpg'
-where not exists (select 1 from products where title = 'Набор воблеров (5 шт.)');
-
-insert into products (title, description, price, image_url)
-select 'Эхолот Lucky FF718', 'Беспроводной, портативный', 4990,
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Fishfinder_display_showing_the_mark_at_Flash_Pinnacle_P7280213.jpg/500px-Fishfinder_display_showing_the_mark_at_Flash_Pinnacle_P7280213.jpg'
-where not exists (select 1 from products where title = 'Эхолот Lucky FF718');
-
-insert into products (title, description, price, image_url)
-select 'Прикормка Sensas 3000', 'Универсальная, 1 кг', 690,
-  'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Zan%C4%99ta_na_ryby_%28Murowana_Goslina%29%2C_groundbait.jpg/500px-Zan%C4%99ta_na_ryby_%28Murowana_Goslina%29%2C_groundbait.jpg'
-where not exists (select 1 from products where title = 'Прикормка Sensas 3000');
-
 
 -- ============================================================
 -- Supabase Storage: бакет для аватаров профиля.
@@ -318,4 +274,29 @@ create policy "Фото чата доступны всем на чтение" on
 create policy "Пользователь загружает фото чата только в свою папку" on storage.objects
   for insert with check (
     bucket_id = 'chat-photos' and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- ============================================================
+-- Supabase Storage: бакет для фото объявлений барахолки.
+-- ============================================================
+
+insert into storage.buckets (id, name, public)
+values ('listing-photos', 'listing-photos', true)
+on conflict (id) do nothing;
+
+-- Фото объявления читает кто угодно (публичный URL в карточке объявления).
+create policy "Фото объявлений доступны всем на чтение" on storage.objects
+  for select using (bucket_id = 'listing-photos');
+
+-- Пользователь загружает фото только в свою папку — приложение сохраняет
+-- фото по пути "<user_id>/<timestamp>.jpg".
+create policy "Пользователь загружает фото объявления только в свою папку" on storage.objects
+  for insert with check (
+    bucket_id = 'listing-photos' and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Автор может удалить фото своих объявлений (при удалении объявления).
+create policy "Пользователь удаляет фото только своих объявлений" on storage.objects
+  for delete using (
+    bucket_id = 'listing-photos' and auth.uid()::text = (storage.foldername(name))[1]
   );

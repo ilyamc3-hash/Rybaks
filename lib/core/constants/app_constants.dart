@@ -28,7 +28,7 @@ class SupabaseTables {
   static const String users = 'users';
   static const String regions = 'regions';
   static const String messages = 'messages';
-  static const String products = 'products';
+  static const String listings = 'listings';
 }
 
 /// Названия бакетов Supabase Storage.
@@ -37,6 +37,7 @@ class SupabaseBuckets {
 
   static const String avatars = 'avatars';
   static const String chatPhotos = 'chat-photos';
+  static const String listingPhotos = 'listing-photos';
 }
 
 /// Общие текстовые константы приложения.

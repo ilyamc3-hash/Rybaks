@@ -8,6 +8,7 @@ import '../../../services/supabase_service.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../auth/providers/dev_auth_provider.dart';
 import '../../auth/screens/phone_input_screen.dart';
+import '../../baraholka/screens/my_listings_screen.dart';
 import '../providers/profile_provider.dart';
 
 /// Экран профиля: номер телефона, имя и фото пользователя, выход из
@@ -203,6 +204,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                   ),
                 ),
+              if (canEditProfile) ...[
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const MyListingsScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.sell_outlined),
+                  label: const Text('Мои объявления'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               PrimaryButton(
                 label: 'Выйти',
                 onPressed: _signOut,

@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../catalog/screens/catalog_screen.dart';
+import '../baraholka/screens/baraholka_screen.dart';
 import '../chat/screens/chat_screen.dart';
 import '../profile/screens/profile_screen.dart';
 import '../regions/providers/regions_provider.dart';
 import '../regions/screens/regions_screen.dart';
 
 /// Корневой экран приложения после входа: нижний таб-бар с четырьмя
-/// разделами — Регионы, Чат, Каталог, Профиль.
+/// разделами — Регионы, Чат, Барахолка, Профиль.
 class MainNavigationScreen extends ConsumerStatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -28,7 +28,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       selectedRegion == null
           ? const _NoRegionSelected()
           : ChatScreen(region: selectedRegion),
-      const CatalogScreen(),
+      const BaraholkaScreen(),
       const ProfileScreen(),
     ];
 
@@ -49,9 +49,9 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
             label: 'Чат',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.storefront_outlined),
-            activeIcon: Icon(Icons.storefront),
-            label: 'Каталог',
+            icon: Icon(Icons.sell_outlined),
+            activeIcon: Icon(Icons.sell),
+            label: 'Барахолка',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),

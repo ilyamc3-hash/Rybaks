@@ -143,4 +143,62 @@ class SupabaseService {
         );
     return client.storage.from(SupabaseBuckets.chatPhotos).getPublicUrl(path);
   }
+
+  /// Загружает фото объявления барахолки в Storage (бакет `listing-photos`,
+  /// путь "{user_id}/{timestamp}.jpg") и возвращает публичный URL.
+  /// Байты читаются через XFile.readAsBytes() — одинаково на вебе и на
+  /// Android (тот же подход, что в uploadAvatar/uploadChatPhoto). Требует
+  /// настоящую сессию Supabase.
+  static Future<String> uploadListingPhoto(XFile photo) async {
+    final user = currentUser;
+    if (user == null) {
+      throw StateError('Нет авторизованного пользователя для загрузки фото.');
+    }
+    final bytes = await photo.readAsBytes();
+    final path = '${user.id}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+    await client.storage.from(SupabaseBuckets.listingPhotos).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: photo.mimeType ?? 'image/jpeg'),
+        );
+    return client.storage.from(SupabaseBuckets.listingPhotos).getPublicUrl(path);
+  }
+
+  /// Создаёт объявление барахолки от имени текущего пользователя. Регион —
+  /// текущий выбранный (тот же, что у чата). RLS требует seller_id =
+  /// auth.uid(), поэтому нужна настоящая сессия.
+  static Future<void> createListing({
+    required String regionId,
+    required String title,
+    String? description,
+    double? price,
+    String? photoUrl,
+  }) async {
+    final user = currentUser;
+    if (user == null) {
+      throw StateError('Разместить объявление можно только после входа по SMS.');
+    }
+    await client.from(SupabaseTables.listings).insert({
+      'seller_id': user.id,
+      'region_id': regionId,
+      'title': title,
+      if (description != null && description.isNotEmpty) 'description': description,
+      if (price != null) 'price': price,
+      if (photoUrl != null) 'photo_url': photoUrl,
+    });
+  }
+
+  /// Меняет статус объявления ('active' | 'sold' | 'archived').
+  /// RLS пропустит только объявления текущего пользователя.
+  static Future<void> setListingStatus(String listingId, String status) {
+    return client
+        .from(SupabaseTables.listings)
+        .update({'status': status}).eq('id', listingId);
+  }
+
+  /// Удаляет объявление. RLS пропустит только объявления текущего
+  /// пользователя.
+  static Future<void> deleteListing(String listingId) {
+    return client.from(SupabaseTables.listings).delete().eq('id', listingId);
+  }
 }

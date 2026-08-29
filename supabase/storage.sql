@@ -47,3 +47,28 @@ create policy "Пользователь загружает фото чата т�
   for insert with check (
     bucket_id = 'chat-photos' and auth.uid()::text = (storage.foldername(name))[1]
   );
+
+-- ============================================================
+-- Supabase Storage: бакет для фото объявлений барахолки.
+-- ============================================================
+
+insert into storage.buckets (id, name, public)
+values ('listing-photos', 'listing-photos', true)
+on conflict (id) do nothing;
+
+-- Фото объявления читает кто угодно (публичный URL в карточке объявления).
+create policy "Фото объявлений доступны всем на чтение" on storage.objects
+  for select using (bucket_id = 'listing-photos');
+
+-- Пользователь загружает фото только в свою папку — приложение сохраняет
+-- фото по пути "<user_id>/<timestamp>.jpg".
+create policy "Пользователь загружает фото объявления только в свою папку" on storage.objects
+  for insert with check (
+    bucket_id = 'listing-photos' and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Автор может удалить фото своих объявлений (при удалении объявления).
+create policy "Пользователь удаляет фото только своих объявлений" on storage.objects
+  for delete using (
+    bucket_id = 'listing-photos' and auth.uid()::text = (storage.foldername(name))[1]
+  );

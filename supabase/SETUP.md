@@ -11,12 +11,17 @@ Publishable (anon) key: `sb_publishable_0PY0lp0IdYWWh-l8H_GOcw__Sabzpv7`
 Открыть **SQL Editor** в дашборде проекта и выполнить по очереди:
 
 1. `supabase/schema.sql` — таблицы `users` / `regions` / `messages` /
-   `products` + RLS.
-2. `supabase/seed.sql` — 85 субъектов РФ + тестовые товары
-   (идемпотентно, спорные 4 региона из версии заказчика исключены).
-3. `supabase/storage.sql` — бакеты `avatars` и `chat-photos` + политики.
+   `listings` + RLS.
+2. `supabase/seed.sql` — 85 субъектов РФ (идемпотентно, спорные 4 региона
+   из версии заказчика исключены).
+3. `supabase/storage.sql` — бакеты `avatars`, `chat-photos`,
+   `listing-photos` + политики.
 
 Либо один файл `supabase/all.sql` (schema + seed + storage подряд).
+
+> Если БД уже была развёрнута со старой таблицей `products` — вместо
+> схемы выполните `supabase/listings.sql` (дропает `products`, создаёт
+> `listings` и бакет `listing-photos`).
 
 После этого: **Database → Replication** (или **Publications**) →
 включить Realtime для таблицы `messages` — иначе чат не обновляется
