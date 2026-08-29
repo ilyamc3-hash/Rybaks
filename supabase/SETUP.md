@@ -29,59 +29,57 @@ Publishable (anon) key: `sb_publishable_0PY0lp0IdYWWh-l8H_GOcw__Sabzpv7`
 Встроенные SMS-провайдеры (Twilio и пр.) не используются — код
 отправляет Edge Function `send-sms-hook` через SMS Aero.
 
+Всё делается в дашборде, CLI не нужен (на этой машине он залогинен под
+другим аккаунтом и доступа к проекту не имеет).
+
 ### 2.1. Включить телефонный провайдер
 
-**Authentication → Sign In / Providers → Phone** → включить.
-SMS-провайдера внутри выбирать не нужно (перекрывается хуком), но
-провайдер Phone должен быть **Enabled**.
+**Authentication → Sign In / Providers → Phone**:
 
-### 2.2. Задать секреты функции
+- Включить **Enable Phone provider**.
+- Блок SMS-провайдера (Twilio и т.п.) не настраивать — доставку
+  перехватывает хук. Если форма не сохраняется с пустыми полями Twilio —
+  вписать любые заглушки (`Account SID` = `test` и т.д.), они не нужны.
+- **Save**.
 
-**Project Settings → Edge Functions → Secrets** (или CLI, см. ниже) —
-добавить:
+### 2.2. Создать Send SMS Hook и забрать его секрет
+
+**Authentication → Hooks → Send SMS hook** → **Add hook / Enable**:
+
+- Тип: **HTTPS**.
+- Hook URL:
+  `https://nwerzgirwbrfcbtdotlf.supabase.co/functions/v1/send-sms-hook`
+- Поле **Secret** заполнится само — раскрыть и **скопировать целиком**
+  (вид `v1,whsec_...`).
+- **Create / Save**. Функции ещё нет — это нормально.
+
+### 2.3. Задать секреты Edge Functions
+
+**Project Settings → Edge Functions → Secrets** (или **Edge Functions →
+вкладка Secrets**) → **Add new secret**:
 
 | Ключ | Значение |
 |------|----------|
-| `SMSAERO_EMAIL` | e-mail аккаунта SMS Aero (тот, под которым выпущен ключ) |
+| `SMSAERO_EMAIL` | `ilmak379@yandex.ru` |
 | `SMSAERO_API_KEY` | `oxnicHOBTNBCicVM_-GyYjqyMMrzU1AE` |
 | `SMSAERO_SIGN` | `SMS Aero` (пока своя подпись не одобрена) |
-| `SEND_SMS_HOOK_SECRET` | заполнить на шаге 2.4 |
+| `SEND_SMS_HOOK_SECRET` | секрет из шага 2.2, вставить как есть, вместе с `v1,` |
 
-> `SMSAERO_EMAIL` знаете только вы — в задании его не было. Это e-mail,
-> которым вы входите в личный кабинет SMS Aero.
+### 2.4. Задеплоить функцию
 
-### 2.3. Задеплоить функцию
+**Edge Functions → Create a new function** (редактор в браузере):
 
-**Вариант A — CLI** (нужен вход в аккаунт-владелец проекта, т.е. ваш
-`ilyamc3@gmail.com`; на этой машине сейчас залогинен другой аккаунт):
+- Имя — ровно **`send-sms-hook`** (иначе URL хука из 2.2 не совпадёт).
+- Вставить **полностью** код из
+  `supabase/functions/send-sms-hook/index.ts`.
+- Снять галку **Verify JWT** при создании; если её нет — задеплоить и
+  затем открыть функцию → **Details / Settings** → выключить
+  **Enforce JWT Verification**.
+- **Deploy**.
 
-```bash
-supabase login
-supabase link --project-ref nwerzgirwbrfcbtdotlf
-supabase secrets set \
-  SMSAERO_EMAIL="ваш-email@example.com" \
-  SMSAERO_API_KEY="oxnicHOBTNBCicVM_-GyYjqyMMrzU1AE" \
-  SMSAERO_SIGN="SMS Aero"
-supabase functions deploy send-sms-hook --no-verify-jwt
-```
-
-`--no-verify-jwt` обязателен: хук вызывается без пользовательского JWT,
-подлинность запроса функция проверяет сама по подписи Standard Webhooks.
-
-**Вариант B — Дашборд:** **Edge Functions → Deploy a new function →**
-имя `send-sms-hook`, вставить код из
-`supabase/functions/send-sms-hook/index.ts`. После деплоя открыть
-функцию → **Details** → выключить **Enforce JWT verification**.
-
-### 2.4. Привязать хук
-
-**Authentication → Hooks → Send SMS hook**:
-
-- **Enable** → тип **HTTPS** (Edge Function).
-- URL: `https://nwerzgirwbrfcbtdotlf.supabase.co/functions/v1/send-sms-hook`
-- Скопировать сгенерированный **Signing secret** (вид `v1,whsec_...`).
-- Вставить его в секрет `SEND_SMS_HOOK_SECRET` (шаг 2.2) и, если функция
-  уже задеплоена, передеплоить/сохранить секреты.
+JWT-проверку обязательно выключить: Auth-хук вызывает функцию без
+пользовательского токена, подлинность проверяется по подписи Standard
+Webhooks внутри самого кода. С включённым JWT функция вернёт 401.
 
 ### 2.5. Проверка
 
@@ -89,12 +87,22 @@ supabase functions deploy send-sms-hook --no-verify-jwt
 curl -s "https://nwerzgirwbrfcbtdotlf.supabase.co/auth/v1/settings" \
   -H "apikey: sb_publishable_0PY0lp0IdYWWh-l8H_GOcw__Sabzpv7"
 # ожидаем "phone": true
+
+curl -i -X POST "https://nwerzgirwbrfcbtdotlf.supabase.co/auth/v1/otp" \
+  -H "apikey: sb_publishable_0PY0lp0IdYWWh-l8H_GOcw__Sabzpv7" \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"+79XXXXXXXXX"}'
+# ожидаем 200; придёт SMS «Ваш код авторизации в Клёв: XXXX»
 ```
 
-Затем в приложении: ввести номер → должно прийти SMS
-«Ваш код авторизации в Клёв: XXXX».
-
-Логи хука: **Edge Functions → send-sms-hook → Logs**.
+Логи: **Edge Functions → send-sms-hook → Logs / Invocations**. Частое:
+- `SEND_SMS_HOOK_SECRET is not configured` — секрет из 2.3 не сохранён;
+- `Invalid webhook signature` — в `SEND_SMS_HOOK_SECRET` не тот секрет
+  (нужен именно из Send SMS hook, с префиксом `v1,`);
+- `SMS Aero rejected the request: ...` — ответ SMS Aero: нет баланса,
+  номер-получатель не подтверждён в кабинете или подпись не одобрена.
+  У новых аккаунтов SMS Aero часто можно слать только на свой
+  подтверждённый номер и только с подписью `SMS Aero`.
 
 ---
 
