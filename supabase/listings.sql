@@ -52,9 +52,18 @@ insert into storage.buckets (id, name, public)
 values ('listing-photos', 'listing-photos', true)
 on conflict (id) do nothing;
 
+-- Бакет публичный: показ фото идёт по прямому URL без RLS. Но
+-- SELECT-политика нужна для upload (INSERT ... RETURNING *), иначе 403
+-- "new row violates row-level security policy". Ограничиваем владельцем,
+-- чтобы через .list() нельзя было перечислить чужие файлы.
 drop policy if exists "Фото объявлений доступны всем на чтение" on storage.objects;
-create policy "Фото объявлений доступны всем на чтение" on storage.objects
-  for select using (bucket_id = 'listing-photos');
+
+drop policy if exists "Владелец читает свои фото объявлений" on storage.objects;
+create policy "Владелец читает свои фото объявлений" on storage.objects
+  for select using (
+    bucket_id = 'listing-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
 
 drop policy if exists "Пользователь загружает фото объявления только в свою папку" on storage.objects;
 create policy "Пользователь загружает фото объявления только в свою папку" on storage.objects
