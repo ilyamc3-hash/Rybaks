@@ -17,5 +17,15 @@ final regionsProvider = FutureProvider<List<RegionModel>>((ref) async {
   return rows.map(RegionModel.fromJson).toList();
 });
 
-/// Регион, выбранный пользователем последним — используется вкладкой «Чат».
+/// Регион, выбранный пользователем последним — используется вкладкой «Чат»
+/// и «Барахолка». Живёт в памяти на время сессии; при старте приложения
+/// восстанавливается из [savedRegionIdProvider] (см. main.dart и
+/// [RegionPreferenceService]) — см. `MainNavigationScreen._restoreRegion`.
 final selectedRegionProvider = StateProvider<RegionModel?>((ref) => null);
+
+/// Id региона, сохранённый в предыдущем запуске приложения.
+///
+/// Переопределяется в `main.dart` реальным значением из
+/// `RegionPreferenceService.loadRegionId()` до вызова `runApp`. По
+/// умолчанию null — на случай, если override не задан (например, в тестах).
+final savedRegionIdProvider = Provider<String?>((ref) => null);

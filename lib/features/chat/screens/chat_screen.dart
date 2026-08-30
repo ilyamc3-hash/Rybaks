@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../models/region_model.dart';
 import '../../../services/supabase_service.dart';
 import '../../auth/providers/dev_auth_provider.dart';
+import '../../main_navigation/providers/tab_index_provider.dart';
 import '../providers/chat_provider.dart';
 import '../widgets/chat_message_bubble.dart';
 
@@ -100,7 +101,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final messagesAsync = ref.watch(chatControllerProvider(widget.region.id));
 
     return Scaffold(
-      appBar: AppBar(title: Text('Чат: ${widget.region.name}')),
+      appBar: AppBar(
+        title: Text('Чат: ${widget.region.name}'),
+        actions: [
+          // Явная возможность сменить регион прямо из чата — чтобы не
+          // приходилось помнить, что текущий регион вообще выбран, и не
+          // искать вкладку «Регионы» отдельно.
+          TextButton.icon(
+            onPressed: () =>
+                ref.read(currentTabIndexProvider.notifier).state = 0,
+            icon: const Icon(Icons.sync_alt, color: Colors.white, size: 18),
+            label: const Text(
+              'Сменить',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [

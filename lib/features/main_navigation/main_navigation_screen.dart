@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../models/region_model.dart';
 import '../baraholka/screens/baraholka_screen.dart';
 import '../chat/screens/chat_screen.dart';
 import '../profile/screens/profile_screen.dart';
 import '../regions/providers/regions_provider.dart';
 import '../regions/screens/regions_screen.dart';
+import 'providers/tab_index_provider.dart';
 
 /// Корневой экран приложения после входа: нижний таб-бар с четырьмя
 /// разделами — Регионы, Чат, Барахолка, Профиль.
@@ -17,11 +19,45 @@ class MainNavigationScreen extends ConsumerStatefulWidget {
 }
 
 class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
-  int _currentIndex = 0;
+  @override
+  void initState() {
+    super.initState();
+    // Восстанавливаем регион, выбранный в прошлом запуске приложения
+    // (сохранён в SharedPreferences/localStorage — см.
+    // RegionPreferenceService). Без этого шага выбор региона живёт
+    // только в памяти текущей сессии и обнуляется при полном
+    // перезапуске приложения.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreRegion());
+  }
+
+  Future<void> _restoreRegion() async {
+    // Если пользователь уже успел выбрать регион в этой сессии — не
+    // перетираем его выбор сохранённым значением.
+    if (ref.read(selectedRegionProvider) != null) return;
+
+    final savedId = ref.read(savedRegionIdProvider);
+    if (savedId == null) return;
+
+    final regions = await ref.read(regionsProvider.future);
+    if (!mounted) return;
+    if (ref.read(selectedRegionProvider) != null) return;
+
+    RegionModel? match;
+    for (final region in regions) {
+      if (region.id == savedId) {
+        match = region;
+        break;
+      }
+    }
+    if (match != null) {
+      ref.read(selectedRegionProvider.notifier).state = match;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final selectedRegion = ref.watch(selectedRegionProvider);
+    final currentIndex = ref.watch(currentTabIndexProvider);
 
     final screens = <Widget>[
       const RegionsScreen(),
@@ -33,10 +69,11 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     ];
 
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: screens),
+      body: IndexedStack(index: currentIndex, children: screens),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        currentIndex: currentIndex,
+        onTap: (index) =>
+            ref.read(currentTabIndexProvider.notifier).state = index,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.map_outlined),

@@ -4,6 +4,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../models/region_model.dart';
 import '../../../services/supabase_service.dart';
 import '../../auth/providers/dev_auth_provider.dart';
+import '../../main_navigation/providers/tab_index_provider.dart';
 import '../../regions/providers/regions_provider.dart';
 import '../providers/listings_provider.dart';
 import '../widgets/listing_card.dart';
@@ -52,7 +53,23 @@ class _RegionBaraholka extends ConsumerWidget {
     final canPost = SupabaseService.isAuthenticated && !isDevTestUser;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Барахолка · ${region.name}')),
+      appBar: AppBar(
+        title: Text('Барахолка · ${region.name}'),
+        actions: [
+          // Та же кнопка смены региона, что и в чате — Барахолка и Чат
+          // всегда показывают один и тот же регион, но легко забыть,
+          // какой именно, если долго не открывал вкладку «Регионы».
+          TextButton.icon(
+            onPressed: () =>
+                ref.read(currentTabIndexProvider.notifier).state = 0,
+            icon: const Icon(Icons.sync_alt, color: Colors.white, size: 18),
+            label: const Text(
+              'Сменить',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: canPost
           ? FloatingActionButton.extended(
               onPressed: () async {
