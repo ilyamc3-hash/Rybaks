@@ -114,6 +114,110 @@ create policy "Автор редактирует только свои объя�
 create policy "Автор удаляет только свои объявления" on listings
   for delete using (auth.uid() = seller_id);
 
+-- ============================================================
+-- Барахолка, фаза 1 личных сообщений: приватная переписка покупателя
+-- с продавцом по конкретному объявлению. Отдельная сущность от
+-- регионального чата (messages): здесь диалог 1:1, привязанный к
+-- listings, а не групповой чат региона.
+--
+-- RLS здесь строго по участникам (buyer_id / seller_id = auth.uid()) —
+-- НИКАКОЙ политики «виден всем авторизованным», в отличие от прошлой
+-- версии политики на users, где так утекали чужие номера телефонов.
+-- Полная миграция с комментариями — supabase/listing_threads.sql.
+-- ============================================================
+
+create table if not exists listing_threads (
+  id uuid primary key default gen_random_uuid(),
+  listing_id uuid not null references listings (id) on delete cascade,
+  buyer_id uuid not null references users (id) on delete cascade,
+  seller_id uuid not null references users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  constraint listing_thread_unique_buyer unique (listing_id, buyer_id),
+  constraint listing_thread_distinct_parties check (buyer_id <> seller_id)
+);
+
+create index if not exists listing_threads_buyer_created_idx
+  on listing_threads (buyer_id, created_at desc);
+create index if not exists listing_threads_seller_created_idx
+  on listing_threads (seller_id, created_at desc);
+create index if not exists listing_threads_listing_idx
+  on listing_threads (listing_id);
+
+create table if not exists listing_messages (
+  id uuid primary key default gen_random_uuid(),
+  thread_id uuid not null references listing_threads (id) on delete cascade,
+  sender_id uuid not null references users (id) on delete cascade,
+  text text,
+  photo_url text,
+  created_at timestamptz not null default now(),
+  read_at timestamptz,
+  constraint listing_message_has_content
+    check (text is not null or photo_url is not null)
+);
+
+create index if not exists listing_messages_thread_created_idx
+  on listing_messages (thread_id, created_at);
+create index if not exists listing_messages_thread_unread_idx
+  on listing_messages (thread_id) where read_at is null;
+
+alter table listing_threads enable row level security;
+alter table listing_messages enable row level security;
+
+create policy "Участник видит свои треды по объявлению" on listing_threads
+  for select using (auth.uid() = buyer_id or auth.uid() = seller_id);
+
+create policy "Покупатель открывает тред по объявлению" on listing_threads
+  for insert with check (
+    auth.uid() = buyer_id
+    and buyer_id <> seller_id
+    and seller_id = (select l.seller_id from listings l where l.id = listing_id)
+  );
+
+create policy "Участник треда видит сообщения" on listing_messages
+  for select using (
+    exists (
+      select 1 from listing_threads t
+      where t.id = listing_messages.thread_id
+        and (t.buyer_id = auth.uid() or t.seller_id = auth.uid())
+    )
+  );
+
+create policy "Участник треда пишет от своего имени" on listing_messages
+  for insert with check (
+    auth.uid() = sender_id
+    and exists (
+      select 1 from listing_threads t
+      where t.id = listing_messages.thread_id
+        and (t.buyer_id = auth.uid() or t.seller_id = auth.uid())
+    )
+  );
+
+create policy "Получатель отмечает сообщение прочитанным" on listing_messages
+  for update using (
+    sender_id <> auth.uid()
+    and exists (
+      select 1 from listing_threads t
+      where t.id = listing_messages.thread_id
+        and (t.buyer_id = auth.uid() or t.seller_id = auth.uid())
+    )
+  )
+  with check (
+    sender_id <> auth.uid()
+    and exists (
+      select 1 from listing_threads t
+      where t.id = listing_messages.thread_id
+        and (t.buyer_id = auth.uid() or t.seller_id = auth.uid())
+    )
+  );
+
+do $$
+begin
+  execute 'alter publication supabase_realtime add table listing_messages';
+exception
+  when duplicate_object then null;
+  when undefined_object then null;
+end $$;
+
 
 -- ============================================================
 -- Seed-скрипт: справочник регионов.
@@ -227,76 +331,128 @@ where not exists (select 1 from regions r where r.name = v.name);
 
 
 -- ============================================================
--- Supabase Storage: бакет для аватаров профиля.
--- Выполнить в SQL Editor проекта Supabase (как schema.sql/seed.sql).
+-- Supabase Storage: бакеты avatars / chat-photos / listing-photos /
+-- thread-photos. Все публичные (buckets.public = true) — показ файлов
+-- идёт по прямому URL /storage/v1/object/public/... в обход RLS.
+--
+-- SELECT-политика на storage.objects всё равно нужна: Storage API при
+-- загрузке делает INSERT ... RETURNING *, и без SELECT-политики,
+-- покрывающей новую строку, запрос падает с 403 "new row violates
+-- row-level security policy" (для avatars это ещё и upsert → UPDATE).
+-- SELECT ограничен владельцем (первый сегмент пути = auth.uid()), чтобы
+-- через Storage API .list() нельзя было перечислить чужие файлы
+-- (предупреждение дашборда "Clients can list all files").
 -- ============================================================
 
+-- ---------- avatars ----------
 insert into storage.buckets (id, name, public)
 values ('avatars', 'avatars', true)
 on conflict (id) do nothing;
 
--- Аватары читает кто угодно (публичный URL показывается в профиле и чате).
-create policy "Аватары доступны всем на чтение" on storage.objects
-  for select using (bucket_id = 'avatars');
+drop policy if exists "Аватары доступны всем на чтение" on storage.objects;
+
+drop policy if exists "Владелец читает свой аватар" on storage.objects;
+create policy "Владелец читает свой аватар" on storage.objects
+  for select using (
+    bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]
+  );
 
 -- Пользователь загружает/меняет/удаляет только файлы в своей папке —
 -- приложение сохраняет аватар по пути "<user_id>/avatar".
+drop policy if exists "Пользователь загружает только свой аватар" on storage.objects;
 create policy "Пользователь загружает только свой аватар" on storage.objects
   for insert with check (
     bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]
   );
 
+drop policy if exists "Пользователь обновляет только свой аватар" on storage.objects;
 create policy "Пользователь обновляет только свой аватар" on storage.objects
   for update using (
     bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]
+  )
+  with check (
+    bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]
   );
 
+drop policy if exists "Пользователь удаляет только свой аватар" on storage.objects;
 create policy "Пользователь удаляет только свой аватар" on storage.objects
   for delete using (
     bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]
   );
 
--- ============================================================
--- Supabase Storage: бакет для фото в чате региона.
--- ============================================================
-
+-- ---------- chat-photos ----------
 insert into storage.buckets (id, name, public)
 values ('chat-photos', 'chat-photos', true)
 on conflict (id) do nothing;
 
--- Фото в чате читает кто угодно (публичный URL показывается в сообщении).
-create policy "Фото чата доступны всем на чтение" on storage.objects
-  for select using (bucket_id = 'chat-photos');
+drop policy if exists "Фото чата доступны всем на чтение" on storage.objects;
 
--- Пользователь загружает фото только в свою папку — приложение сохраняет
--- фото по пути "<user_id>/<region_id>-<timestamp>.jpg". Обновление и
--- удаление не нужны: у каждой отправки фото свой уникальный путь.
-create policy "Пользователь загружает фото чата только в свою папку" on storage.objects
-  for insert with check (
-    bucket_id = 'chat-photos' and auth.uid()::text = (storage.foldername(name))[1]
+drop policy if exists "Владелец читает свои фото чата" on storage.objects;
+create policy "Владелец читает свои фото чата" on storage.objects
+  for select using (
+    bucket_id = 'chat-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
   );
 
--- ============================================================
--- Supabase Storage: бакет для фото объявлений барахолки.
--- ============================================================
+-- Пользователь загружает фото только в свою папку — приложение сохраняет
+-- фото по пути "<user_id>/<region_id>-<timestamp>.jpg".
+drop policy if exists "Пользователь загружает фото чата только в свою папку" on storage.objects;
+create policy "Пользователь загружает фото чата только в свою папку" on storage.objects
+  for insert with check (
+    bucket_id = 'chat-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
 
+-- ---------- listing-photos ----------
 insert into storage.buckets (id, name, public)
 values ('listing-photos', 'listing-photos', true)
 on conflict (id) do nothing;
 
--- Фото объявления читает кто угодно (публичный URL в карточке объявления).
-create policy "Фото объявлений доступны всем на чтение" on storage.objects
-  for select using (bucket_id = 'listing-photos');
+drop policy if exists "Фото объявлений доступны всем на чтение" on storage.objects;
+
+drop policy if exists "Владелец читает свои фото объявлений" on storage.objects;
+create policy "Владелец читает свои фото объявлений" on storage.objects
+  for select using (
+    bucket_id = 'listing-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
 
 -- Пользователь загружает фото только в свою папку — приложение сохраняет
 -- фото по пути "<user_id>/<timestamp>.jpg".
+drop policy if exists "Пользователь загружает фото объявления только в свою папку" on storage.objects;
 create policy "Пользователь загружает фото объявления только в свою папку" on storage.objects
   for insert with check (
-    bucket_id = 'listing-photos' and auth.uid()::text = (storage.foldername(name))[1]
+    bucket_id = 'listing-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
   );
 
 -- Автор может удалить фото своих объявлений (при удалении объявления).
+drop policy if exists "Пользователь удаляет фото только своих объявлений" on storage.objects;
 create policy "Пользователь удаляет фото только своих объявлений" on storage.objects
   for delete using (
-    bucket_id = 'listing-photos' and auth.uid()::text = (storage.foldername(name))[1]
+    bucket_id = 'listing-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- ---------- thread-photos ----------
+-- Фото внутри личной переписки барахолки (listing_threads /
+-- listing_messages). Путь файла: "<user_id>/<thread_id>-<timestamp>.jpg".
+insert into storage.buckets (id, name, public)
+values ('thread-photos', 'thread-photos', true)
+on conflict (id) do nothing;
+
+drop policy if exists "Фото переписки доступны всем на чтение" on storage.objects;
+
+drop policy if exists "Владелец читает свои фото переписки" on storage.objects;
+create policy "Владелец читает свои фото переписки" on storage.objects
+  for select using (
+    bucket_id = 'thread-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+drop policy if exists "Пользователь загружает фото переписки только в свою папку" on storage.objects;
+create policy "Пользователь загружает фото переписки только в свою папку" on storage.objects
+  for insert with check (
+    bucket_id = 'thread-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
   );

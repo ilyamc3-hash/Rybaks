@@ -164,6 +164,30 @@ class SupabaseService {
     return client.storage.from(SupabaseBuckets.listingPhotos).getPublicUrl(path);
   }
 
+  /// Загружает фото для личной переписки по объявлению в Storage (бакет
+  /// `thread-photos`, путь "{user_id}/{thread_id}-{timestamp}.jpg") и
+  /// возвращает публичный URL. Байты читаются через XFile.readAsBytes() —
+  /// одинаково на вебе и на Android (как uploadChatPhoto). Требует
+  /// настоящую сессию Supabase.
+  static Future<String> uploadListingThreadPhoto(
+    XFile photo, {
+    required String threadId,
+  }) async {
+    final user = currentUser;
+    if (user == null) {
+      throw StateError('Нет авторизованного пользователя для загрузки фото.');
+    }
+    final bytes = await photo.readAsBytes();
+    final path =
+        '${user.id}/$threadId-${DateTime.now().millisecondsSinceEpoch}.jpg';
+    await client.storage.from(SupabaseBuckets.threadPhotos).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: photo.mimeType ?? 'image/jpeg'),
+        );
+    return client.storage.from(SupabaseBuckets.threadPhotos).getPublicUrl(path);
+  }
+
   /// Создаёт объявление барахолки от имени текущего пользователя. Регион —
   /// текущий выбранный (тот же, что у чата). RLS требует seller_id =
   /// auth.uid(), поэтому нужна настоящая сессия.

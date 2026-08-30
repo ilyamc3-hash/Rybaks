@@ -6,10 +6,12 @@ import '../../../services/supabase_service.dart';
 import '../../auth/providers/dev_auth_provider.dart';
 import '../../main_navigation/providers/tab_index_provider.dart';
 import '../../regions/providers/regions_provider.dart';
+import '../providers/listing_threads_provider.dart';
 import '../providers/listings_provider.dart';
 import '../widgets/listing_card.dart';
 import 'create_listing_screen.dart';
 import 'listing_detail_screen.dart';
+import 'listing_threads_screen.dart';
 
 /// Вкладка «Барахолка»: объявления пользователей в текущем выбранном
 /// регионе (тот же регион, что у чата). Регион выбирается на вкладке
@@ -56,6 +58,33 @@ class _RegionBaraholka extends ConsumerWidget {
       appBar: AppBar(
         title: Text('Барахолка · ${region.name}'),
         actions: [
+          // Входящие переписки по объявлениям барахолки. Показываем только
+          // тем, кто вообще может писать/получать сообщения (реальная
+          // сессия, не dev) — у остальных «Сообщения» всегда пустые.
+          if (canPost)
+            Consumer(
+              builder: (context, ref, _) {
+                final unread = ref.watch(listingThreadsProvider).maybeWhen(
+                      data: (threads) => threads.fold<int>(
+                        0,
+                        (sum, t) => sum + t.unreadCount,
+                      ),
+                      orElse: () => 0,
+                    );
+                const icon = Icon(Icons.mail_outline, color: Colors.white);
+                return IconButton(
+                  tooltip: 'Сообщения',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ListingThreadsScreen(),
+                    ),
+                  ),
+                  icon: unread > 0
+                      ? Badge(label: Text('$unread'), child: icon)
+                      : icon,
+                );
+              },
+            ),
           // Та же кнопка смены региона, что и в чате — Барахолка и Чат
           // всегда показывают один и тот же регион, но легко забыть,
           // какой именно, если долго не открывал вкладку «Регионы».

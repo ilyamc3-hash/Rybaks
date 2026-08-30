@@ -5,7 +5,10 @@ import '../../../core/format.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../models/listing_model.dart';
 import '../../../services/supabase_service.dart';
+import '../../auth/providers/dev_auth_provider.dart';
+import '../providers/listing_threads_provider.dart';
 import '../providers/listings_provider.dart';
+import 'listing_thread_screen.dart';
 
 /// Карточка объявления: фото, цена, описание, контакт продавца.
 /// Если объявление принадлежит текущему пользователю — кнопки
@@ -146,15 +149,41 @@ class ListingDetailScreen extends ConsumerWidget {
   }
 }
 
-class _SellerBlock extends StatelessWidget {
+class _SellerBlock extends ConsumerWidget {
   const _SellerBlock({required this.listing, required this.isMine});
 
   final ListingModel listing;
   final bool isMine;
 
+  Future<void> _openThread(BuildContext context, WidgetRef ref) async {
+    try {
+      final thread = await ref
+          .read(listingThreadActionsProvider.notifier)
+          .openOrCreate(listing);
+      if (!context.mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ListingThreadScreen(thread: thread),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось открыть переписку. $error')),
+      );
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final phone = listing.sellerPhone?.trim();
+
+    // «Написать» — только реальному покупателю: не своё объявление, есть
+    // настоящая сессия Supabase (RLS требует auth.uid()), не dev-режим.
+    final isDevTestUser = ref.watch(devTestUserProvider);
+    final threadBusy = ref.watch(listingThreadActionsProvider);
+    final canMessage =
+        !isMine && SupabaseService.isAuthenticated && !isDevTestUser;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -183,6 +212,17 @@ class _SellerBlock extends StatelessWidget {
             ),
           ],
         ),
+        if (canMessage) ...[
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: threadBusy ? null : () => _openThread(context, ref),
+            icon: const Icon(Icons.chat_bubble_outline),
+            label: const Text('Написать'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         if (isMine)
           const SizedBox.shrink()
