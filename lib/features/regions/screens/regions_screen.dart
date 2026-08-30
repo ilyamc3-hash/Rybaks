@@ -29,7 +29,10 @@ class RegionsScreen extends ConsumerWidget {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     'Сейчас выбран: ${selectedRegion.name}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ),

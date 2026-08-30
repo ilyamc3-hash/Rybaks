@@ -71,7 +71,8 @@ class _RegionBaraholka extends ConsumerWidget {
                       ),
                       orElse: () => 0,
                     );
-                const icon = Icon(Icons.mail_outline, color: Colors.white);
+                // Цвет наследуется из AppBarTheme.foregroundColor.
+                const icon = Icon(Icons.mail_outline);
                 return IconButton(
                   tooltip: 'Сообщения',
                   onPressed: () => Navigator.of(context).push(
@@ -91,11 +92,10 @@ class _RegionBaraholka extends ConsumerWidget {
           TextButton.icon(
             onPressed: () =>
                 ref.read(currentTabIndexProvider.notifier).state = 0,
-            icon: const Icon(Icons.sync_alt, color: Colors.white, size: 18),
-            label: const Text(
-              'Сменить',
-              style: TextStyle(color: Colors.white),
-            ),
+            // Цвета не задаём — TextButton в AppBar берёт foregroundColor
+            // из textButtonTheme (AppColors.primary).
+            icon: const Icon(Icons.sync_alt, size: 18),
+            label: const Text('Сменить'),
           ),
         ],
       ),

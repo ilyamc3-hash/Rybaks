@@ -41,7 +41,10 @@ class ChatController extends StateNotifier<AsyncValue<List<MessageModel>>> {
             '(id, name, avatar_url)',
           )
           .eq('region_id', regionId)
-          .order('created_at');
+          // ascending: true обязателен — без него supabase-клиент
+          // сортирует по убыванию, и старые сообщения оказываются внизу.
+          // Новые сообщения из realtime дописываются в конец списка.
+          .order('created_at', ascending: true);
 
       final messages = rows.map((row) {
         final authorJson = row['author'] as Map<String, dynamic>?;

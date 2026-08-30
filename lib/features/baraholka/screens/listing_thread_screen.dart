@@ -115,7 +115,10 @@ class _ListingThreadScreenState extends ConsumerState<ListingThreadScreen> {
               widget.thread.counterpartyName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: Colors.white70),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
             ),
           ],
         ),

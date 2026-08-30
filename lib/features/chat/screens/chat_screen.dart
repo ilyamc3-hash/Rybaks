@@ -110,11 +110,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           TextButton.icon(
             onPressed: () =>
                 ref.read(currentTabIndexProvider.notifier).state = 0,
-            icon: const Icon(Icons.sync_alt, color: Colors.white, size: 18),
-            label: const Text(
-              'Сменить',
-              style: TextStyle(color: Colors.white),
-            ),
+            // Цвета не задаём — TextButton в AppBar берёт foregroundColor
+            // из textButtonTheme (AppColors.primary).
+            icon: const Icon(Icons.sync_alt, size: 18),
+            label: const Text('Сменить'),
           ),
         ],
       ),
