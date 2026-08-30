@@ -87,8 +87,10 @@ alter table listings enable row level security;
 create policy "Регионы доступны всем" on regions
   for select using (true);
 
-create policy "Пользователь видит все профили" on users
-  for select using (auth.role() = 'authenticated');
+-- Свою строку users (в т.ч. свой телефон) видит только сам пользователь.
+-- Имя/аватар других — через представление user_public_profiles ниже.
+create policy "Пользователь видит свой профиль" on users
+  for select using (auth.uid() = id);
 
 create policy "Пользователь редактирует только свой профиль" on users
   for update using (auth.uid() = id);
@@ -113,6 +115,20 @@ create policy "Автор редактирует только свои объя�
 
 create policy "Автор удаляет только свои объявления" on listings
   for delete using (auth.uid() = seller_id);
+
+-- ============================================================
+-- Публичный профиль без телефона: имя/аватар для показа продавца,
+-- собеседника в переписке и автора сообщения в чате. Читается embed-
+-- запросами PostgREST (seller:user_public_profiles!fk(...)) и точечно
+-- в chat_provider. security_invoker = false (по умолчанию, указано
+-- явно): обходит RLS users и отдаёт только безопасные колонки.
+-- ============================================================
+create or replace view public.user_public_profiles
+  with (security_invoker = false) as
+  select id, name, avatar_url, region_id, created_at
+  from public.users;
+
+grant select on public.user_public_profiles to authenticated, anon;
 
 -- ============================================================
 -- Барахолка, фаза 1 личных сообщений: приватная переписка покупателя

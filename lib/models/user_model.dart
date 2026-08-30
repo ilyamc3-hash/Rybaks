@@ -2,7 +2,7 @@
 class UserModel {
   const UserModel({
     required this.id,
-    required this.phone,
+    this.phone,
     this.name,
     this.avatarUrl,
     this.regionId,
@@ -10,7 +10,12 @@ class UserModel {
   });
 
   final String id;
-  final String phone;
+
+  /// Телефон приходит только когда пользователь читает СВОЙ профиль
+  /// напрямую из `users` (`fetchCurrentUserProfile`). В embed-запросах и
+  /// при чтении чужих профилей используется представление
+  /// `user_public_profiles`, где телефона нет — тогда null.
+  final String? phone;
   final String? name;
   final String? avatarUrl;
   final String? regionId;
@@ -19,7 +24,7 @@ class UserModel {
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       id: json['id'] as String,
-      phone: json['phone'] as String,
+      phone: json['phone'] as String?,
       name: json['name'] as String?,
       avatarUrl: json['avatar_url'] as String?,
       regionId: json['region_id'] as String?,

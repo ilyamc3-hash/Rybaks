@@ -1,9 +1,10 @@
 /// Объявление барахолки. Соответствует таблице `listings` в Supabase.
 ///
-/// Поля `seller*` заполняются, когда запрос делает join на `users`
-/// (`*, seller:users(id, phone, name, avatar_url)`) — RLS отдаёт профиль
-/// продавца только авторизованным пользователям, поэтому у анонимного
-/// зрителя они останутся null.
+/// Поля `seller*` заполняются embed-запросом на представление
+/// `user_public_profiles` (`*, seller:user_public_profiles!listings_seller_id_fkey(id, name, avatar_url)`).
+/// Телефона продавца здесь нет намеренно — связь только через встроенную
+/// переписку (кнопка «Написать»). Свой полный профиль с телефоном
+/// пользователь читает отдельно из `users` (fetchCurrentUserProfile).
 class ListingModel {
   const ListingModel({
     required this.id,
@@ -16,7 +17,6 @@ class ListingModel {
     this.photoUrl,
     this.createdAt,
     this.sellerName,
-    this.sellerPhone,
     this.sellerAvatarUrl,
   });
 
@@ -35,19 +35,16 @@ class ListingModel {
   final DateTime? createdAt;
 
   final String? sellerName;
-  final String? sellerPhone;
   final String? sellerAvatarUrl;
 
   bool get isActive => status == 'active';
   bool get isSold => status == 'sold';
 
-  /// Как показывать продавца в карточке: имя, иначе телефон, иначе общая
-  /// подпись (профиль скрыт RLS для анонимных зрителей).
+  /// Как показывать продавца в карточке: имя, иначе общая подпись
+  /// (имя ещё не задано, либо профиль не приехал).
   String get sellerDisplayName {
     final name = sellerName?.trim();
     if (name != null && name.isNotEmpty) return name;
-    final phone = sellerPhone?.trim();
-    if (phone != null && phone.isNotEmpty) return phone;
     return 'Продавец';
   }
 
@@ -66,7 +63,6 @@ class ListingModel {
           ? null
           : DateTime.parse(json['created_at'] as String),
       sellerName: seller?['name'] as String?,
-      sellerPhone: seller?['phone'] as String?,
       sellerAvatarUrl: seller?['avatar_url'] as String?,
     );
   }

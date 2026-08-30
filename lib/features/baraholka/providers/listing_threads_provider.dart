@@ -7,12 +7,17 @@ import '../../../models/listing_model.dart';
 import '../../../services/supabase_service.dart';
 
 /// Селект треда вместе с объявлением и обеими сторонами диалога. RLS на
-/// `listing_threads` уже отдаёт только треды текущего пользователя, но
-/// имя/аватар собеседника приезжают join'ом на `users`.
+/// `listing_threads` уже отдаёт только треды текущего пользователя, а
+/// имя/аватар собеседника приезжают embed'ом на `user_public_profiles`
+/// (без телефона). Хинты `!listing_threads_buyer_id_fkey` /
+/// `!listing_threads_seller_id_fkey` — имена FK-констрейнтов
+/// listing_threads.{buyer,seller}_id → users.id (нужны, т.к. два FK на
+/// одну таблицу + embed через view). Сверить: `select conname from
+/// pg_constraint where contype='f' and conrelid='listing_threads'::regclass;`
 const _threadSelect =
     '*, listing:listings(id, title, photo_url, status), '
-    'buyer:users(id, phone, name, avatar_url), '
-    'seller:users(id, phone, name, avatar_url)';
+    'buyer:user_public_profiles!listing_threads_buyer_id_fkey(id, name, avatar_url), '
+    'seller:user_public_profiles!listing_threads_seller_id_fkey(id, name, avatar_url)';
 
 /// «Входящие» барахолки: все треды текущего пользователя — и как
 /// покупателя, и как продавца — с превью последнего сообщения и числом

@@ -26,6 +26,11 @@ class SupabaseTables {
   SupabaseTables._();
 
   static const String users = 'users';
+
+  /// Представление `user_public_profiles` — имя/аватар без телефона.
+  /// Читать чужие профили можно только отсюда: RLS на `users` отдаёт
+  /// пользователю лишь его собственную строку (см. supabase/users_rls_fix.sql).
+  static const String userPublicProfiles = 'user_public_profiles';
   static const String regions = 'regions';
   static const String messages = 'messages';
   static const String listings = 'listings';

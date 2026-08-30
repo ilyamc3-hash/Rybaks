@@ -1,10 +1,11 @@
 /// Тред личной переписки по объявлению барахолки — один диалог на пару
 /// (объявление, покупатель). Соответствует таблице `listing_threads`.
 ///
-/// Поля `listing*` и `counterparty*` заполняются join'ом на `listings`
-/// и `users` при загрузке списка тредов. Поля `lastMessage*` и
-/// [unreadCount] дозаполняет `listingThreadsProvider` отдельным запросом
-/// к `listing_messages` (аналогия — `MessageModel.copyWithAuthor`).
+/// Поля `listing*` и `counterparty*` заполняются embed'ом на `listings`
+/// и `user_public_profiles` (имя/аватар, без телефона) при загрузке
+/// списка тредов. Поля `lastMessage*` и [unreadCount] дозаполняет
+/// `listingThreadsProvider` отдельным запросом к `listing_messages`
+/// (аналогия — `MessageModel.copyWithAuthor`).
 class ListingThreadModel {
   const ListingThreadModel({
     required this.id,
@@ -84,13 +85,11 @@ class ListingThreadModel {
     );
   }
 
-  /// Имя собеседника: заполненное имя, иначе телефон, иначе общая подпись
-  /// (профиль может быть скрыт RLS).
+  /// Имя собеседника из `user_public_profiles` (телефона там нет): имя,
+  /// иначе общая подпись.
   static String _displayName(Map<String, dynamic>? user) {
     final name = (user?['name'] as String?)?.trim();
     if (name != null && name.isNotEmpty) return name;
-    final phone = (user?['phone'] as String?)?.trim();
-    if (phone != null && phone.isNotEmpty) return phone;
     return 'Собеседник';
   }
 

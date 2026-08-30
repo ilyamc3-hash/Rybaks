@@ -33,7 +33,13 @@ class ChatController extends StateNotifier<AsyncValue<List<MessageModel>>> {
     try {
       final rows = await SupabaseService.client
           .from(SupabaseTables.messages)
-          .select('*, author:users(id, phone, name, avatar_url)')
+          // Имя/аватар автора — из представления user_public_profiles
+          // (без телефона). Хинт !messages_author_id_fkey — имя FK
+          // messages.author_id → users.id, нужен для embed через view.
+          .select(
+            '*, author:user_public_profiles!messages_author_id_fkey'
+            '(id, name, avatar_url)',
+          )
           .eq('region_id', regionId)
           .order('created_at');
 
@@ -53,16 +59,16 @@ class ChatController extends StateNotifier<AsyncValue<List<MessageModel>>> {
     _subscribeToRealtime();
   }
 
-  /// Подставляет имя/аватар из кэша в сообщение: приоритет — заполненное
-  /// имя пользователя, иначе телефон, иначе общая подпись из fromJson.
+  /// Подставляет имя/аватар из кэша в сообщение: заполненное имя
+  /// пользователя, иначе остаётся общая подпись из fromJson («Рыбак»).
+  /// Телефон в подписи не используем — его больше нет в профиле автора
+  /// (user_public_profiles), да и светить номер в общем чате не нужно.
   MessageModel _applyAuthor(MessageModel message, String authorId) {
     final author = _authorCache[authorId];
     if (author == null) return message;
-    final name = author.name;
-    final resolvedName =
-        (name != null && name.trim().isNotEmpty) ? name.trim() : author.phone;
+    final name = author.name?.trim();
     return message.copyWithAuthor(
-      authorName: resolvedName,
+      authorName: (name != null && name.isNotEmpty) ? name : null,
       authorAvatarUrl: author.avatarUrl,
     );
   }
@@ -87,7 +93,7 @@ class ChatController extends StateNotifier<AsyncValue<List<MessageModel>>> {
             if (!_authorCache.containsKey(message.authorId)) {
               try {
                 final row = await SupabaseService.client
-                    .from(SupabaseTables.users)
+                    .from(SupabaseTables.userPublicProfiles)
                     .select()
                     .eq('id', message.authorId)
                     .maybeSingle();
@@ -95,8 +101,8 @@ class ChatController extends StateNotifier<AsyncValue<List<MessageModel>>> {
                   _authorCache[message.authorId] = UserModel.fromJson(row);
                 }
               } catch (_) {
-                // RLS может скрыть профиль (например, аноним смотрит чат) —
-                // тогда просто остаётся общая подпись из fromJson.
+                // Профиль не подгрузился — просто остаётся общая подпись
+                // из fromJson.
               }
             }
             message = _applyAuthor(message, message.authorId);

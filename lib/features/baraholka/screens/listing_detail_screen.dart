@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/format.dart';
 import '../../../core/theme/app_colors.dart';
@@ -10,7 +9,8 @@ import '../providers/listing_threads_provider.dart';
 import '../providers/listings_provider.dart';
 import 'listing_thread_screen.dart';
 
-/// Карточка объявления: фото, цена, описание, контакт продавца.
+/// Карточка объявления: фото, цена, описание, продавец + кнопка
+/// «Написать» (единственный способ связи — телефон не показываем).
 /// Если объявление принадлежит текущему пользователю — кнопки
 /// «Отметить проданным» и «Удалить».
 class ListingDetailScreen extends ConsumerWidget {
@@ -176,10 +176,10 @@ class _SellerBlock extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final phone = listing.sellerPhone?.trim();
-
     // «Написать» — только реальному покупателю: не своё объявление, есть
     // настоящая сессия Supabase (RLS требует auth.uid()), не dev-режим.
+    // Телефон продавца в приложении больше не показывается — связь
+    // только через встроенную переписку.
     final isDevTestUser = ref.watch(devTestUserProvider);
     final threadBusy = ref.watch(listingThreadActionsProvider);
     final canMessage =
@@ -223,36 +223,6 @@ class _SellerBlock extends ConsumerWidget {
             ),
           ),
         ],
-        const SizedBox(height: 12),
-        if (isMine)
-          const SizedBox.shrink()
-        else if (phone != null && phone.isNotEmpty)
-          Row(
-            children: [
-              const Icon(Icons.phone_outlined, size: 18, color: AppColors.primary),
-              const SizedBox(width: 8),
-              SelectableText(phone,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: phone));
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Номер скопирован')),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.copy, size: 16),
-                label: const Text('Копировать'),
-              ),
-            ],
-          )
-        else
-          const Text(
-            'Контакты продавца видны после входа по SMS.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
       ],
     );
   }
