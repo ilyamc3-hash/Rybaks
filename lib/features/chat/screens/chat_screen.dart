@@ -5,6 +5,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../models/region_model.dart';
 import '../../../services/supabase_service.dart';
 import '../../auth/providers/dev_auth_provider.dart';
+import '../../baraholka/providers/listing_threads_provider.dart';
+import '../../baraholka/screens/listing_thread_screen.dart';
 import '../../main_navigation/providers/tab_index_provider.dart';
 import '../providers/chat_provider.dart';
 import '../widgets/chat_message_bubble.dart';
@@ -62,6 +64,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось отправить сообщение. $error')),
+      );
+    }
+  }
+
+  /// Открыть (или создать) личный диалог с автором сообщения из чата.
+  Future<void> _openDirectThread(String authorId) async {
+    try {
+      final thread = await ref
+          .read(listingThreadActionsProvider.notifier)
+          .openOrCreateDirect(authorId);
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ListingThreadScreen(thread: thread),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось открыть диалог. $error')),
       );
     }
   }
@@ -138,15 +160,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   if (messages.isEmpty) {
                     return const Center(child: Text('Пока нет сообщений'));
                   }
+                  // Личный диалог из чата доступен только реально
+                  // залогиненному пользователю (RLS требует auth.uid()),
+                  // и не с dev-тестовым автором (его нет в users).
+                  final canDirectMessage = SupabaseService.isAuthenticated;
                   return ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(16),
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
                       final message = messages[index];
+                      final isMine = message.authorId == _userId;
+                      final canTapAuthor = canDirectMessage &&
+                          !isMine &&
+                          message.authorId != DevTestUser.id;
                       return ChatMessageBubble(
                         message: message,
-                        isMine: message.authorId == _userId,
+                        isMine: isMine,
+                        onAuthorTap: canTapAuthor
+                            ? () => _openDirectThread(message.authorId)
+                            : null,
                       );
                     },
                   );

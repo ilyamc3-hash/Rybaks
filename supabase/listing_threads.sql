@@ -1,14 +1,15 @@
 -- ============================================================
--- Фаза 1 личных сообщений в Барахолке: переписка покупателя с продавцом
--- по конкретному объявлению (в дополнение к «позвонить / скопировать
--- номер» в карточке объявления).
+-- Личные сообщения: приватный диалог 1:1 — по объявлению барахолки
+-- (listing_id задан) или напрямую из общего чата региона по тапу на
+-- имени автора (listing_id is null). См. также
+-- supabase/direct_messages_generalize.sql (миграция, сделавшая
+-- listing_id необязательным на уже развёрнутой БД).
 --
 -- Отдельный файл миграции — как supabase/listings.sql. Выполнить в
 -- SQL Editor проекта Supabase. Идемпотентно, можно повторно.
 --
--- Региональный чат (таблица messages) НЕ затрагивается — это независимая
--- сущность: там плоский групповой чат по региону, здесь — приватный
--- диалог 1:1, привязанный к объявлению.
+-- Таблица messages (групповой чат региона) НЕ затрагивается — это
+-- независимая сущность; отсюда только берётся точка входа в прямой диалог.
 --
 -- ВАЖНО про RLS. В схеме уже был прецедент, когда чтение профилей
 -- (`users`, а с ними и номеров телефонов) было открыто всем
@@ -18,20 +19,29 @@
 -- «виден всем авторизованным».
 -- ============================================================
 
--- 1. Треды: один диалог на пару (объявление, покупатель). Продавец —
---    всегда владелец объявления на момент создания треда.
+-- 1. Треды приватной переписки 1:1. Два вида:
+--    - по объявлению (listing_id задан): продавец — владелец объявления;
+--    - прямой диалог из общего чата региона (listing_id is null):
+--      buyer_id / seller_id — просто «кто инициировал» / «второй».
 create table if not exists listing_threads (
   id uuid primary key default gen_random_uuid(),
-  listing_id uuid not null references listings (id) on delete cascade,
+  listing_id uuid references listings (id) on delete cascade,
   buyer_id uuid not null references users (id) on delete cascade,
   seller_id uuid not null references users (id) on delete cascade,
   created_at timestamptz not null default now(),
   -- один тред на пару «объявление + покупатель»: повторное «Написать»
-  -- по тому же объявлению должно открывать существующий диалог.
+  -- по тому же объявлению открывает существующий диалог.
   constraint listing_thread_unique_buyer unique (listing_id, buyer_id),
-  -- продавец не пишет сам себе по своему же объявлению.
+  -- нельзя писать сам себе.
   constraint listing_thread_distinct_parties check (buyer_id <> seller_id)
 );
+
+-- Один прямой диалог на пару пользователей (в любом порядке). Только для
+-- тредов без объявления — там listing_thread_unique_buyer не спасает
+-- (два NULL в listing_id не равны друг другу).
+create unique index if not exists listing_thread_unique_direct_pair
+  on listing_threads (least(buyer_id, seller_id), greatest(buyer_id, seller_id))
+  where listing_id is null;
 
 -- «Входящие» пользователя: его треды и как покупателя, и как продавца,
 -- свежие сверху.
@@ -77,15 +87,20 @@ drop policy if exists "Участник видит свои треды по об
 create policy "Участник видит свои треды по объявлению" on listing_threads
   for select using (auth.uid() = buyer_id or auth.uid() = seller_id);
 
--- Открыть тред может только покупатель (от своего имени), и только
--- с настоящим продавцом объявления. seller_id нельзя подставить
--- произвольный — он сверяется с listings.seller_id.
+-- Открыть тред может только инициатор (от своего имени) и не сам себе.
+-- Если тред по объявлению — seller_id обязан совпадать с
+-- listings.seller_id (нельзя подставить произвольного продавца). Для
+-- прямого диалога из чата (listing_id is null) сверять не с чем.
 drop policy if exists "Покупатель открывает тред по объявлению" on listing_threads;
-create policy "Покупатель открывает тред по объявлению" on listing_threads
+drop policy if exists "Пользователь открывает тред" on listing_threads;
+create policy "Пользователь открывает тред" on listing_threads
   for insert with check (
     auth.uid() = buyer_id
     and buyer_id <> seller_id
-    and seller_id = (select l.seller_id from listings l where l.id = listing_id)
+    and (
+      listing_id is null
+      or seller_id = (select l.seller_id from listings l where l.id = listing_id)
+    )
   );
 
 -- UPDATE/DELETE тредов на фазе 1 не нужны — политик нет, значит запрещено.

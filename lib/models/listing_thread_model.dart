@@ -1,5 +1,6 @@
-/// Тред личной переписки по объявлению барахолки — один диалог на пару
-/// (объявление, покупатель). Соответствует таблице `listing_threads`.
+/// Тред приватной переписки 1:1. Соответствует таблице `listing_threads`.
+/// Два вида: по объявлению барахолки ([listingId] задан) или прямой
+/// диалог из общего чата региона ([listingId] == null, см. [isDirect]).
 ///
 /// Поля `listing*` и `counterparty*` заполняются embed'ом на `listings`
 /// и `user_public_profiles` (имя/аватар, без телефона) при загрузке
@@ -27,14 +28,19 @@ class ListingThreadModel {
   });
 
   final String id;
-  final String listingId;
+
+  /// null — прямой диалог из общего чата (не привязан к объявлению).
+  final String? listingId;
   final String buyerId;
   final String sellerId;
   final DateTime createdAt;
 
-  /// true — текущий пользователь в этом треде покупатель (пишет продавцу);
-  /// false — он продавец (отвечает на вопрос по своему объявлению).
+  /// true — текущий пользователь в этом треде покупатель / инициатор;
+  /// false — он продавец / вторая сторона.
   final bool iAmBuyer;
+
+  /// Прямой диалог из чата, а не переписка по объявлению.
+  bool get isDirect => listingId == null;
 
   final String? listingTitle;
   final String? listingPhotoUrl;
@@ -72,7 +78,7 @@ class ListingThreadModel {
 
     return ListingThreadModel(
       id: json['id'] as String,
-      listingId: json['listing_id'] as String,
+      listingId: json['listing_id'] as String?,
       buyerId: buyerId,
       sellerId: sellerId,
       createdAt: DateTime.parse(json['created_at'] as String),

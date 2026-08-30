@@ -11,10 +11,16 @@ class ChatMessageBubble extends StatelessWidget {
     super.key,
     required this.message,
     required this.isMine,
+    this.onAuthorTap,
   });
 
   final MessageModel message;
   final bool isMine;
+
+  /// Тап по имени автора над чужим сообщением — открыть личный диалог с
+  /// ним. null — если это недоступно (своё сообщение, не залогинен,
+  /// автор — dev-пользователь). Тогда имя показывается без подсказки.
+  final VoidCallback? onAuthorTap;
 
   @override
   Widget build(BuildContext context) {
@@ -38,13 +44,9 @@ class ChatMessageBubble extends StatelessWidget {
           if (!isMine)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                message.authorName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                  fontSize: 12,
-                ),
+              child: _AuthorName(
+                name: message.authorName,
+                onTap: onAuthorTap,
               ),
             ),
           if (message.localPhotoBytes != null || message.photoUrl != null)
@@ -133,6 +135,33 @@ class ChatMessageBubble extends StatelessWidget {
       height: 150,
       color: AppColors.primaryLight,
       child: const Icon(Icons.image_not_supported_outlined),
+    );
+  }
+}
+
+/// Имя автора над чужим сообщением. Если задан [onTap] — кликабельно
+/// (подчёркнуто) и ведёт в личный диалог с этим пользователем.
+class _AuthorName extends StatelessWidget {
+  const _AuthorName({required this.name, this.onTap});
+
+  final String name;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontWeight: FontWeight.w600,
+      color: AppColors.primary,
+      fontSize: 12,
+      decoration: onTap == null ? null : TextDecoration.underline,
+      decorationColor: AppColors.primary,
+    );
+    final text = Text(name, style: style);
+    if (onTap == null) return text;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: text,
     );
   }
 }

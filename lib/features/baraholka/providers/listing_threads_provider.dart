@@ -84,15 +84,78 @@ final listingThreadsProvider =
   return result;
 });
 
-/// Найти существующий тред по объявлению для текущего пользователя-
-/// покупателя или создать новый. Держит флаг занятости для блокировки
-/// кнопки «Написать».
+/// Найти-или-создать тред: по объявлению ([openOrCreate]) или прямой
+/// диалог из чата ([openOrCreateDirect]). Держит флаг занятости для
+/// блокировки кнопок.
 class ListingThreadActions extends StateNotifier<bool> {
   ListingThreadActions(this.ref) : super(false);
 
   final Ref ref;
 
   bool get isBusy => state;
+
+  /// Прямой диалог текущего пользователя с [otherUserId] (не по
+  /// объявлению). Тред симметричен: ищем в любом порядке buyer/seller;
+  /// если нет — создаём с currentUser как инициатором (buyer_id).
+  Future<ListingThreadModel> openOrCreateDirect(String otherUserId) async {
+    final userId = SupabaseService.currentUser?.id;
+    if (userId == null) {
+      throw StateError('Написать можно только после входа по SMS.');
+    }
+    if (userId == otherUserId) {
+      throw StateError('Нельзя написать самому себе.');
+    }
+
+    state = true;
+    try {
+      final existing = await _findDirectThread(userId, otherUserId);
+      if (existing != null) {
+        return ListingThreadModel.fromJson(existing, currentUserId: userId);
+      }
+
+      try {
+        final inserted = await SupabaseService.client
+            .from(SupabaseTables.listingThreads)
+            .insert({'buyer_id': userId, 'seller_id': otherUserId})
+            .select(_threadSelect)
+            .single();
+        ref.invalidate(listingThreadsProvider);
+        return ListingThreadModel.fromJson(inserted, currentUserId: userId);
+      } on PostgrestException catch (error) {
+        // 23505 — тред этой пары уже создан (гонка / встречный тап).
+        if (error.code != '23505') rethrow;
+        final row = await _findDirectThread(userId, otherUserId);
+        if (row == null) rethrow;
+        return ListingThreadModel.fromJson(row, currentUserId: userId);
+      }
+    } finally {
+      state = false;
+    }
+  }
+
+  /// Прямой тред (listing_id is null) пары пользователей — в любом
+  /// порядке buyer/seller. RLS и так отдаёт только треды текущего
+  /// пользователя, поэтому фильтруем результат по второй стороне на
+  /// клиенте (у обычного пользователя таких тредов единицы).
+  Future<Map<String, dynamic>?> _findDirectThread(
+    String userId,
+    String otherUserId,
+  ) async {
+    final rows = await SupabaseService.client
+        .from(SupabaseTables.listingThreads)
+        .select(_threadSelect)
+        .isFilter('listing_id', null)
+        .or('buyer_id.eq.$userId,seller_id.eq.$userId');
+    for (final row in rows) {
+      final buyer = row['buyer_id'] as String;
+      final seller = row['seller_id'] as String;
+      if ((buyer == userId && seller == otherUserId) ||
+          (buyer == otherUserId && seller == userId)) {
+        return row;
+      }
+    }
+    return null;
+  }
 
   /// Возвращает тред текущего пользователя (как покупателя) с продавцом
   /// [listing]. Повторный вызов по тому же объявлению не создаёт дубль —

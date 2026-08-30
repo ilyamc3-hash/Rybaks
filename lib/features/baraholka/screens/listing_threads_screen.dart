@@ -6,9 +6,9 @@ import '../../../models/listing_thread_model.dart';
 import '../providers/listing_threads_provider.dart';
 import 'listing_thread_screen.dart';
 
-/// «Входящие» барахолки: список всех переписок пользователя по
-/// объявлениям (и где он покупатель, и где продавец). Тап открывает
-/// переписку.
+/// «Входящие»: список всех личных переписок пользователя — по
+/// объявлениям барахолки и прямых диалогов из чата — вперемешку по
+/// последней активности. Тап открывает переписку.
 class ListingThreadsScreen extends ConsumerWidget {
   const ListingThreadsScreen({super.key});
 
@@ -43,8 +43,8 @@ class ListingThreadsScreen extends ConsumerWidget {
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: 24),
                     child: Text(
-                      'Здесь появятся переписки по объявлениям барахолки — '
-                      'ваши вопросы продавцам и ответы покупателям.',
+                      'Здесь появятся личные переписки — вопросы продавцам '
+                      'по объявлениям и диалоги из чата.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: AppColors.textSecondary),
                     ),
@@ -73,6 +73,18 @@ class _ThreadTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasUnread = thread.unreadCount > 0;
+    final isDirect = thread.isDirect;
+
+    // Прямой диалог из чата: объявления нет — в заголовке имя собеседника,
+    // в «подписи объявления» — «Личный диалог», в аватарке — фото
+    // собеседника (или иконка человека).
+    final leadingUrl =
+        isDirect ? thread.counterpartyAvatarUrl : thread.listingPhotoUrl;
+    final titleText = isDirect
+        ? thread.counterpartyName
+        : (thread.listingTitle ?? 'Объявление');
+    final captionText =
+        isDirect ? 'Личный диалог' : thread.counterpartyName;
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -81,17 +93,17 @@ class _ThreadTile extends StatelessWidget {
         child: SizedBox(
           width: 48,
           height: 48,
-          child: thread.listingPhotoUrl != null
+          child: leadingUrl != null
               ? Image.network(
-                  thread.listingPhotoUrl!,
+                  leadingUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => _photoPlaceholder(),
+                  errorBuilder: (_, _, _) => _photoPlaceholder(isDirect),
                 )
-              : _photoPlaceholder(),
+              : _photoPlaceholder(isDirect),
         ),
       ),
       title: Text(
-        thread.listingTitle ?? 'Объявление',
+        titleText,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontWeight: FontWeight.w600),
@@ -100,7 +112,7 @@ class _ThreadTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            thread.counterpartyName,
+            captionText,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -178,11 +190,11 @@ class _ThreadTile extends StatelessWidget {
         : DateFormat('dd.MM').format(local);
   }
 
-  Widget _photoPlaceholder() {
+  Widget _photoPlaceholder(bool isDirect) {
     return Container(
       color: AppColors.primaryLight,
-      child: const Icon(
-        Icons.photo_camera_back_outlined,
+      child: Icon(
+        isDirect ? Icons.person : Icons.photo_camera_back_outlined,
         color: AppColors.primary,
         size: 20,
       ),

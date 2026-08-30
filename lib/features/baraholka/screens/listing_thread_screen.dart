@@ -100,29 +100,39 @@ class _ListingThreadScreenState extends ConsumerState<ListingThreadScreen> {
     final isDevTestUser = ref.watch(devTestUserProvider);
     final canWrite = SupabaseService.isAuthenticated && !isDevTestUser;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.thread.listingTitle ?? 'Объявление',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 16),
-            ),
-            Text(
-              widget.thread.counterpartyName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
+    final thread = widget.thread;
+    // Прямой диалог из чата: объявления нет — в шапке просто имя
+    // собеседника. По объявлению: название объявления + имя под ним.
+    final appBarTitle = thread.isDirect
+        ? Text(
+            thread.counterpartyName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 16),
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                thread.listingTitle ?? 'Объявление',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 16),
               ),
-            ),
-          ],
-        ),
-      ),
+              Text(
+                thread.counterpartyName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          );
+
+    return Scaffold(
+      appBar: AppBar(title: appBarTitle),
       body: SafeArea(
         child: Column(
           children: [
@@ -142,13 +152,15 @@ class _ListingThreadScreenState extends ConsumerState<ListingThreadScreen> {
                 ),
                 data: (messages) {
                   if (messages.isEmpty) {
-                    return const Center(
+                    return Center(
                       child: Padding(
-                        padding: EdgeInsets.all(24),
+                        padding: const EdgeInsets.all(24),
                         child: Text(
-                          'Напишите первое сообщение по этому объявлению.',
+                          thread.isDirect
+                              ? 'Напишите первое сообщение.'
+                              : 'Напишите первое сообщение по этому объявлению.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.textSecondary),
+                          style: const TextStyle(color: AppColors.textSecondary),
                         ),
                       ),
                     );

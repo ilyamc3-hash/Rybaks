@@ -131,26 +131,33 @@ create or replace view public.user_public_profiles
 grant select on public.user_public_profiles to authenticated, anon;
 
 -- ============================================================
--- Барахолка, фаза 1 личных сообщений: приватная переписка покупателя
--- с продавцом по конкретному объявлению. Отдельная сущность от
--- регионального чата (messages): здесь диалог 1:1, привязанный к
--- listings, а не групповой чат региона.
+-- Личные сообщения: приватный диалог 1:1 — по объявлению барахолки
+-- (listing_id задан) или напрямую из общего чата региона по тапу на
+-- имени автора (listing_id is null). Отдельная сущность от messages
+-- (групповой чат региона).
 --
 -- RLS здесь строго по участникам (buyer_id / seller_id = auth.uid()) —
 -- НИКАКОЙ политики «виден всем авторизованным», в отличие от прошлой
 -- версии политики на users, где так утекали чужие номера телефонов.
--- Полная миграция с комментариями — supabase/listing_threads.sql.
+-- Полная миграция — supabase/listing_threads.sql +
+-- supabase/direct_messages_generalize.sql.
 -- ============================================================
 
 create table if not exists listing_threads (
   id uuid primary key default gen_random_uuid(),
-  listing_id uuid not null references listings (id) on delete cascade,
+  listing_id uuid references listings (id) on delete cascade,
   buyer_id uuid not null references users (id) on delete cascade,
   seller_id uuid not null references users (id) on delete cascade,
   created_at timestamptz not null default now(),
   constraint listing_thread_unique_buyer unique (listing_id, buyer_id),
   constraint listing_thread_distinct_parties check (buyer_id <> seller_id)
 );
+
+-- один прямой диалог на пару пользователей (в любом порядке), только
+-- для тредов без объявления.
+create unique index if not exists listing_thread_unique_direct_pair
+  on listing_threads (least(buyer_id, seller_id), greatest(buyer_id, seller_id))
+  where listing_id is null;
 
 create index if not exists listing_threads_buyer_created_idx
   on listing_threads (buyer_id, created_at desc);
@@ -182,11 +189,14 @@ alter table listing_messages enable row level security;
 create policy "Участник видит свои треды по объявлению" on listing_threads
   for select using (auth.uid() = buyer_id or auth.uid() = seller_id);
 
-create policy "Покупатель открывает тред по объявлению" on listing_threads
+create policy "Пользователь открывает тред" on listing_threads
   for insert with check (
     auth.uid() = buyer_id
     and buyer_id <> seller_id
-    and seller_id = (select l.seller_id from listings l where l.id = listing_id)
+    and (
+      listing_id is null
+      or seller_id = (select l.seller_id from listings l where l.id = listing_id)
+    )
   );
 
 create policy "Участник треда видит сообщения" on listing_messages
